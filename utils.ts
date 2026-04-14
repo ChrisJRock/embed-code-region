@@ -75,3 +75,72 @@ export function extractSrcLines(fullSrc: string,  srcLinesNum: number[]): string
 
     return src
 }
+
+type RegionsResult = { ok: true; content: string } | { ok: false; error: string }
+
+export function extractRegions(fullSrc: string, regionsSpec: string): RegionsResult {
+	const lines = fullSrc.split(/\r?\n/)
+	const startRe = /^\s*(?:\/\/|#|<!--)\s*#region\s+(.+?)\s*(?:-->)?\s*$/i
+	const endRe   = /^\s*(?:\/\/|#|<!--)\s*#endregion\b/i
+
+	const segments = regionsSpec.split(',').map(s => s.trim()).filter(s => s.length > 0)
+	const parts: { startLineNum: number; content: string }[] = []
+
+	for (const segment of segments) {
+		if (/^\d+$/.test(segment)) {
+			const lineNum = parseInt(segment)
+			if (lineNum >= 1 && lineNum <= lines.length) {
+				parts.push({ startLineNum: lineNum, content: lines[lineNum - 1] })
+			}
+		} else if (/^\d+-\d+$/.test(segment)) {
+			const [left, right] = segment.split('-').map(Number)
+			const lo = Math.max(1, left)
+			const hi = Math.min(lines.length, right)
+			if (lo <= hi) {
+				parts.push({ startLineNum: lo, content: lines.slice(lo - 1, hi).join('\n') })
+			}
+		} else {
+			let startIndex = -1
+			for (let i = 0; i < lines.length; i++) {
+				const m = lines[i].match(startRe)
+				if (m && m[1].trim() === segment) {
+					startIndex = i
+					break
+				}
+			}
+			if (startIndex === -1) {
+				return { ok: false, error: `region '${segment}' not found` }
+			}
+			let endIndex = -1
+			for (let j = startIndex + 1; j < lines.length; j++) {
+				if (endRe.test(lines[j])) {
+					endIndex = j
+					break
+				}
+			}
+			if (endIndex === -1) {
+				return { ok: false, error: `region '${segment}' has no matching #endregion` }
+			}
+			const body = lines.slice(startIndex + 1, endIndex)
+			const content = [lines[startIndex], ...body].join('\n')
+			parts.push({ startLineNum: startIndex + 1, content })
+		}
+	}
+
+	if (parts.length === 0) {
+		return { ok: true, content: '' }
+	}
+
+	let output = ''
+	for (let i = 0; i < parts.length; i++) {
+		const { startLineNum, content } = parts[i]
+		const prefix = `... Line ${startLineNum}\n`
+		if (i === 0) {
+			output = startLineNum === 1 ? content : prefix + content
+		} else {
+			output += '\n' + prefix + content
+		}
+	}
+
+	return { ok: true, content: output }
+}

@@ -1,6 +1,6 @@
 import { Plugin, MarkdownRenderer, TFile, MarkdownPostProcessorContext, MarkdownView, parseYaml, requestUrl} from 'obsidian';
 import { EmbedCodeFileSettings, EmbedCodeFileSettingTab, DEFAULT_SETTINGS} from "./settings";
-import { analyseSrcLines, extractSrcLines} from "./utils";
+import { analyseSrcLines, extractSrcLines, extractRegions } from "./utils";
 
 export default class EmbedCodeFile extends Plugin {
 	settings: EmbedCodeFileSettings;
@@ -75,16 +75,21 @@ export default class EmbedCodeFile extends Plugin {
 				return
 			}
 
-			let srcLinesNum: number[] = []
-			const srcLinesNumString = metaYaml.LINES
-			if (srcLinesNumString) {
-				srcLinesNum = analyseSrcLines(srcLinesNumString)
-			}
+			const regionName: string | undefined = metaYaml.REGION
+			const srcLinesNumString: string | undefined = metaYaml.LINES
 
-			if (srcLinesNum.length == 0) {
-				src = fullSrc
+			if (regionName) {
+				const regionResult = extractRegions(fullSrc, regionName)
+				if (!regionResult.ok) {
+					const errMsg = `\`ERROR: ${regionResult.error} in '${srcPath}'\``
+					await MarkdownRenderer.renderMarkdown(errMsg, el, '', this)
+					return
+				}
+				src = regionResult.content
+			} else if (srcLinesNumString) {
+				src = extractSrcLines(fullSrc, analyseSrcLines(srcLinesNumString))
 			} else {
-				src = extractSrcLines(fullSrc, srcLinesNum)
+				src = fullSrc
 			}
 
 			let title = metaYaml.TITLE
