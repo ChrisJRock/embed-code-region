@@ -1,3 +1,22 @@
+.ecr-line {
+    display: block;
+}
+
+.ecr-line::before {
+    content: attr(data-line-num);
+    color: var(--text-muted);
+    opacity: 0.5;
+    user-select: none;
+    -webkit-user-select: none;
+    display: inline-block;
+    min-width: 3ch;
+    text-align: right;
+    margin-right: 0.75em;
+    padding-right: 0.5em;
+    border-right: 1px solid rgba(128, 128, 128, 0.2);
+    font-style: normal;
+}
+
 .markdown-rendered pre .obsidian-embed-code-file {
     position: relative;
     top: 3px;

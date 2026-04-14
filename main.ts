@@ -1,6 +1,33 @@
 import { Plugin, MarkdownRenderer, TFile, MarkdownPostProcessorContext, MarkdownView, parseYaml, requestUrl} from 'obsidian';
 import { EmbedCodeFileSettings, EmbedCodeFileSettingTab, DEFAULT_SETTINGS} from "./settings";
-import { analyseSrcLines, extractSrcLines, extractRegions } from "./utils";
+import { analyseSrcLines, buildLineEntries, extractRegions, LineEntry } from "./utils";
+
+function wrapCodeLines(codeEl: HTMLElement, entries: LineEntry[]): void {
+	const spans = entries.map(e => {
+		const span = document.createElement('span')
+		span.className = 'ecr-line'
+		span.dataset.lineNum = 'gap' in e ? '...' : String(e.lineNum)
+		return span
+	})
+
+	let line = 0
+	for (const node of Array.from(codeEl.childNodes)) {
+		if (line >= spans.length) break
+		if (node.nodeType === Node.TEXT_NODE) {
+			const parts = (node.textContent ?? '').split('\n')
+			for (let i = 0; i < parts.length; i++) {
+				if (i > 0 && ++line >= spans.length) break
+				const isGap = spans[line].dataset.lineNum === '...'
+				if (!isGap && parts[i]) spans[line].appendChild(document.createTextNode(parts[i]))
+			}
+		} else if (node.nodeType === Node.ELEMENT_NODE && spans[line].dataset.lineNum !== '...') {
+			spans[line].appendChild(node.cloneNode(true))
+		}
+	}
+
+	codeEl.innerHTML = ''
+	spans.forEach(s => codeEl.appendChild(s))
+}
 
 export default class EmbedCodeFile extends Plugin {
 	settings: EmbedCodeFileSettings;
@@ -33,7 +60,6 @@ export default class EmbedCodeFile extends Plugin {
 	async registerRenderer(lang: string) {
 		this.registerMarkdownCodeBlockProcessor(`embed-${lang}`, async (meta, el, ctx) => {
 			let fullSrc = ""
-			let src = ""
 
 			let metaYaml: any
 			try {
@@ -75,30 +101,40 @@ export default class EmbedCodeFile extends Plugin {
 				return
 			}
 
+			// Build line entries
+			let entries: LineEntry[]
 			const regionName: string | undefined = metaYaml.REGION
 			const srcLinesNumString: string | undefined = metaYaml.LINES
 
 			if (regionName) {
-				const regionResult = extractRegions(fullSrc, regionName)
-				if (!regionResult.ok) {
-					const errMsg = `\`ERROR: ${regionResult.error} in '${srcPath}'\``
+				const result = extractRegions(fullSrc, regionName)
+				if (!result.ok) {
+					const errMsg = `\`ERROR: ${result.error} in '${srcPath}'\``
 					await MarkdownRenderer.renderMarkdown(errMsg, el, '', this)
 					return
 				}
-				src = regionResult.content
+				entries = result.entries
 			} else if (srcLinesNumString) {
-				src = extractSrcLines(fullSrc, analyseSrcLines(srcLinesNumString))
+				entries = buildLineEntries(fullSrc, analyseSrcLines(srcLinesNumString))
 			} else {
-				src = fullSrc
+				entries = fullSrc.split(/\r?\n/).map((text, i) => ({ lineNum: i + 1, text }))
 			}
+
+			// Code text: gaps render as '...'
+			const codeText = entries.map(e => 'gap' in e ? '...' : e.text).join('\n')
+
+			// Render with syntax highlighting, then inject per-line number spans
+			const tempEl = document.createElement('div')
+			await MarkdownRenderer.renderMarkdown('```' + lang + '\n' + codeText + '\n```', tempEl, '', this)
+			const renderedPre = tempEl.querySelector('pre') as HTMLPreElement | null
+			const renderedCode = renderedPre?.querySelector('code') as HTMLElement | null
+			if (renderedCode) wrapCodeLines(renderedCode, entries)
+
+			el.appendChild(renderedPre ?? tempEl)
 
 			let title = metaYaml.TITLE
-			if (!title) {
-				title = srcPath
-			}
-
-			await MarkdownRenderer.renderMarkdown('```' + lang + '\n' + src + '\n```', el, '', this)
-			this.addTitleLivePreview(el, title);
+			if (!title) title = srcPath
+			this.addTitleLivePreview(el, title)
 		});
 	}
 

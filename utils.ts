@@ -76,7 +76,31 @@ export function extractSrcLines(fullSrc: string,  srcLinesNum: number[]): string
     return src
 }
 
-type RegionsResult = { ok: true; content: string } | { ok: false; error: string }
+export type LineEntry = { lineNum: number; text: string } | { gap: true }
+
+export function buildLineEntries(fullSrc: string, srcLinesNum: number[]): LineEntry[] {
+	const srcLines = fullSrc.split(/\r?\n/)
+	const total = srcLines.length
+
+	let nums = srcLinesNum.filter(n => n === 0 || (n >= 1 && n <= total))
+	nums = nums.filter((n, i, arr) => !(n === 0 && i > 0 && arr[i - 1] === 0))
+
+	// Strip leading and trailing zeros — '...' only belongs between blocks, not at the edges
+	while (nums.length > 0 && nums[0] === 0) nums = nums.slice(1)
+	while (nums.length > 0 && nums[nums.length - 1] === 0) nums = nums.slice(0, -1)
+
+	if (nums.length === 0) return []
+
+	const result: LineEntry[] = []
+	for (const n of nums) {
+		if (n === 0) result.push({ gap: true })
+		else result.push({ lineNum: n, text: srcLines[n - 1] })
+	}
+
+	return result.filter((e, i, arr) => !('gap' in e) || i === 0 || !('gap' in arr[i - 1]))
+}
+
+export type RegionsResult = { ok: true; entries: LineEntry[] } | { ok: false; error: string }
 
 export function extractRegions(fullSrc: string, regionsSpec: string): RegionsResult {
 	const lines = fullSrc.split(/\r?\n/)
@@ -84,63 +108,50 @@ export function extractRegions(fullSrc: string, regionsSpec: string): RegionsRes
 	const endRe   = /^\s*(?:\/\/|#|<!--)\s*#endregion\b/i
 
 	const segments = regionsSpec.split(',').map(s => s.trim()).filter(s => s.length > 0)
-	const parts: { startLineNum: number; content: string }[] = []
+	const parts: LineEntry[][] = []
 
 	for (const segment of segments) {
 		if (/^\d+$/.test(segment)) {
 			const lineNum = parseInt(segment)
 			if (lineNum >= 1 && lineNum <= lines.length) {
-				parts.push({ startLineNum: lineNum, content: lines[lineNum - 1] })
+				parts.push([{ lineNum, text: lines[lineNum - 1] }])
 			}
 		} else if (/^\d+-\d+$/.test(segment)) {
 			const [left, right] = segment.split('-').map(Number)
 			const lo = Math.max(1, left)
 			const hi = Math.min(lines.length, right)
 			if (lo <= hi) {
-				parts.push({ startLineNum: lo, content: lines.slice(lo - 1, hi).join('\n') })
+				const seg: LineEntry[] = []
+				for (let i = lo; i <= hi; i++) seg.push({ lineNum: i, text: lines[i - 1] })
+				parts.push(seg)
 			}
 		} else {
 			let startIndex = -1
 			for (let i = 0; i < lines.length; i++) {
 				const m = lines[i].match(startRe)
-				if (m && m[1].trim() === segment) {
-					startIndex = i
-					break
-				}
+				if (m && m[1].trim() === segment) { startIndex = i; break }
 			}
-			if (startIndex === -1) {
-				return { ok: false, error: `region '${segment}' not found` }
-			}
+			if (startIndex === -1) return { ok: false, error: `region '${segment}' not found` }
+
 			let endIndex = -1
 			for (let j = startIndex + 1; j < lines.length; j++) {
-				if (endRe.test(lines[j])) {
-					endIndex = j
-					break
-				}
+				if (endRe.test(lines[j])) { endIndex = j; break }
 			}
-			if (endIndex === -1) {
-				return { ok: false, error: `region '${segment}' has no matching #endregion` }
-			}
-			const body = lines.slice(startIndex + 1, endIndex)
-			const content = [lines[startIndex], ...body].join('\n')
-			parts.push({ startLineNum: startIndex + 1, content })
+			if (endIndex === -1) return { ok: false, error: `region '${segment}' has no matching #endregion` }
+
+			const seg: LineEntry[] = [{ lineNum: startIndex + 1, text: lines[startIndex] }]
+			for (let i = startIndex + 1; i <= endIndex; i++) seg.push({ lineNum: i + 1, text: lines[i] })
+			parts.push(seg)
 		}
 	}
 
-	if (parts.length === 0) {
-		return { ok: true, content: '' }
-	}
+	if (parts.length === 0) return { ok: true, entries: [] }
 
-	let output = ''
+	const entries: LineEntry[] = []
 	for (let i = 0; i < parts.length; i++) {
-		const { startLineNum, content } = parts[i]
-		const prefix = `... Line ${startLineNum}\n`
-		if (i === 0) {
-			output = startLineNum === 1 ? content : prefix + content
-		} else {
-			output += '\n' + prefix + content
-		}
+		if (i > 0) entries.push({ gap: true })
+		entries.push(...parts[i])
 	}
 
-	return { ok: true, content: output }
+	return { ok: true, entries }
 }
