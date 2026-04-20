@@ -1,9 +1,9 @@
 {
-	"id": "embed-code-file",
-	"name": "Embed Code File",
-	"version": "1.2.0",
+	"id": "embed-code-region",
+	"name": "Embed Code Region",
+	"version": "1.2.1",
 	"minAppVersion": "0.15.0",
-	"description": "This is a plugin for Obsidian that allows for embedding code files.",
+	"description": "This is a plugin for Obsidian that allows for embedding code regions. It is a fork of the Embed Code File plugin.",
 	"author": "Obsidian",
 	"authorUrl": "https://obsidian.md",
 	"isDesktopOnly": false

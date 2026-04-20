@@ -1,7 +1,7 @@
 {
-	"name": "embed-code-file",
-	"version": "1.2.0",
-	"description": "This is a plugin for Obsidian that allows for embedding code files.",
+	"name": "embed-code-region",
+	"version": "1.2.1",
+	"description": "This is a plugin for Obsidian that allows for embedding code regions. It is a fork of the Embed Code File plugin.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
